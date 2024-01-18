@@ -121,7 +121,7 @@ import rospy
 import tf
 
 from ackermann_msgs.msg import AckermannDrive
-from std_msgs.msg import Float64, Bool
+from std_msgs.msg import Float64
 from controller_manager_msgs.srv import ListControllers
 
 
@@ -138,11 +138,6 @@ class _AckermannCtrlr(object):
         rospy.init_node("ackermann_controller")
 
         # Parameters
-        self.my_rf_vals= 0
-        self.my_lf_vals= 0
-        self.my_rr_vals= 0
-        self.my_lr_vals= 0
-        self.wheels_drive = True
 
         # Wheels
         (left_steer_link_name, left_steer_ctrlr_name,
@@ -219,23 +214,7 @@ class _AckermannCtrlr(object):
 
         # _ackermann_cmd_lock is used to control access to _steer_ang,
         # _steer_ang_vel, _speed, and _accel.
-        self._ackermann_cmd_lock = threading.Lock()
-        self._steer_ang = 0.0      # Steering angle
-        self._steer_ang_vel = 0.0  # Steering angle velocity
-        self._speed = 0.0
-        self._accel = 0.0          # Acceleration
 
-        self._last_steer_ang = 0.0  # Last steering angle
-        self._theta_left = 0.0      # Left steering joint angle
-        self._theta_right = 0.0     # Right steering joint angle
-
-        self._last_speed = 0.0
-        self._last_accel_limit = 0.0  # Last acceleration limit
-        # Axle angular velocities
-        self._left_front_ang_vel = 0.0
-        self._right_front_ang_vel = 0.0
-        self._left_rear_ang_vel = 0.0
-        self._right_rear_ang_vel = 0.0
 
         # _joint_dist_div_2 is the distance between the steering joints,
         # divided by two.
@@ -267,17 +246,6 @@ class _AckermannCtrlr(object):
         self._right_rear_axle_cmd_pub = \
             _create_axle_cmd_pub(list_ctrlrs, right_rear_axle_ctrlr_name)
 
-        self._ackermann_cmd_sub = \
-            rospy.Subscriber("ackermann_cmd", AckermannDrive,
-                             self.ackermann_cmd_cb, queue_size=1)
-        ##################################################################################################################
-        
-
-        self.rf_wheel_sub = rospy.Subscriber("/right_front_axle_val", Float64, self.rf_wheel_callback, queue_size=1)
-        self.lf_wheel_sub = rospy.Subscriber("/left_front_axle_val", Float64, self.lf_wheel_callback, queue_size=1)
-        self.rr_wheel_sub = rospy.Subscriber("/right_rear_axle_val", Float64, self.rr_wheel_callback, queue_size=1)
-        self.lr_wheel_sub = rospy.Subscriber("/left_rear_axle_val", Float64, self.lr_wheel_callback, queue_size=1)
-        ##################################################################################################################
 
     def spin(self):
         """Control the vehicle."""
@@ -296,34 +264,13 @@ class _AckermannCtrlr(object):
                 steer_ang_changed, center_y = \
                     self._ctrl_steering(self._last_steer_ang, 0.0, 0.001)
                 self._ctrl_axles(0.0, 0.0, 0.0, steer_ang_changed, center_y)
-            elif delta_t > 0.0:
-                with self._ackermann_cmd_lock:
-                    steer_ang = self._steer_ang
-                    steer_ang_vel = self._steer_ang_vel
-                    speed = self._speed
-                    accel = self._accel
-                steer_ang_changed, center_y = \
-                    self._ctrl_steering(steer_ang, steer_ang_vel, delta_t)
-                self._ctrl_axles(speed, accel, delta_t, steer_ang_changed,
-                                 center_y)
+        
 
             # Publish the steering and axle joint commands.
-            ########################################################## replace the axle values if sth set the values
-                ############################################################################### put a subscriber her
-
-            if self.wheels_drive == True:
-                self._left_front_ang_vel = self.my_lf_vals
-                self._right_front_ang_vel = self.my_rf_vals
-                self._left_rear_ang_vel = self.my_lr_vals
-                self._right_rear_ang_vel = self.my_rr_vals
-
-            #################################################################################################
             self._left_steer_cmd_pub.publish(self._theta_left)
             self._right_steer_cmd_pub.publish(self._theta_right)
-
             if self._left_front_axle_cmd_pub:
                 self._left_front_axle_cmd_pub.publish(self._left_front_ang_vel)
-            
             if self._right_front_axle_cmd_pub:
                 self._right_front_axle_cmd_pub.\
                     publish(self._right_front_ang_vel)
@@ -331,34 +278,9 @@ class _AckermannCtrlr(object):
                 self._left_rear_axle_cmd_pub.publish(self._left_rear_ang_vel)
             if self._right_rear_axle_cmd_pub:
                 self._right_rear_axle_cmd_pub.publish(self._right_rear_ang_vel)
-            
-            
+
             self._sleep_timer.sleep()
 
-    def ackermann_cmd_cb(self, ackermann_cmd):
-        """Ackermann driving command callback
-
-        :Parameters:
-          ackermann_cmd : ackermann_msgs.msg.AckermannDrive
-            Ackermann driving command.
-        """
-        self._last_cmd_time = rospy.get_time()
-        with self._ackermann_cmd_lock:
-            self._steer_ang = ackermann_cmd.steering_angle
-            self._steer_ang_vel = ackermann_cmd.steering_angle_velocity
-            self._speed = ackermann_cmd.speed
-            self._accel = ackermann_cmd.acceleration
-    ##################################################################################################################
-    def rf_wheel_callback(self, data):
-        self.my_rf_vals= data
-    def lf_wheel_callback(self, data):
-        self.my_lf_vals= data
-    def rr_wheel_callback(self, data):
-        self.my_rr_vals= data
-    def lr_wheel_callback(self, data):
-        self.my_lr_vals= data        
-   
-    ##################################################################################################################    
 
     def _get_front_wheel_params(self, side):
         # Get front wheel parameters. Return a tuple containing the steering
@@ -517,9 +439,6 @@ def _get_steer_ang(phi):
     if phi >= 0.0:
         return (pi / 2) - phi
     return (-pi / 2) - phi
-
-
-
 
 
 # main

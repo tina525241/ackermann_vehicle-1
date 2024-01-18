@@ -1,0 +1,6 @@
+float64 right_theta
+float64 left_theta
+float64 ang_v_right_front
+float64 ang_v_left_front_ang_v
+float64 ang_v_right_rear_ang_v
+float64 ang_v_left_rear_ang_v
