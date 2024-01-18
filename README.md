@@ -1,4 +1,2 @@
-ackermann_vehicle
-=================
+ackermann vehicle
 
-ROS packages for simulating a vehicle with Ackermann steering
