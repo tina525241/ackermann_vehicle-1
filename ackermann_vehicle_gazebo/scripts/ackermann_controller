@@ -119,9 +119,10 @@ from math import pi
 
 import rospy
 import tf
-
+import numpy as np
 from ackermann_msgs.msg import AckermannDrive
 from std_msgs.msg import Float64, Bool
+from ackermann_vehicle_gazebo.msg import wheel_vals
 from controller_manager_msgs.srv import ListControllers
 
 
@@ -142,7 +143,15 @@ class _AckermannCtrlr(object):
         self.my_lf_vals= 0
         self.my_rr_vals= 0
         self.my_lr_vals= 0
-        self.wheels_drive = True
+        self.wheels_drive = False
+        self.cur_wheels_status = wheel_vals()
+        self.cur_wheels_status.right_theta = 0
+        self.cur_wheels_status.left_theta = 0
+        self.cur_wheels_status.ang_v_right_front = 0
+        self.cur_wheels_status.ang_v_left_front = 0
+        self.cur_wheels_status.ang_v_right_rear = 0
+        self.cur_wheels_status.ang_v_left_rear = 0
+
 
         # Wheels
         (left_steer_link_name, left_steer_ctrlr_name,
@@ -166,31 +175,31 @@ class _AckermannCtrlr(object):
         list_ctrlrs.wait_for_service()
 
         # Shock absorbers
-        shock_param_list = rospy.get_param("~shock_absorbers", [])
-        self._shock_pubs = []
-        try:
-            for shock_params in shock_param_list:
-                try:
-                    ctrlr_name = shock_params["controller_name"]
-                    try:
-                        eq_pos = shock_params["equilibrium_position"]
-                    except:
-                        eq_pos = self._DEF_EQ_POS
-                    eq_pos = float(eq_pos)
-                except:
-                    rospy.logwarn("An invalid parameter was specified for a "
-                                  "shock absorber. The shock absorber will "
-                                  "not be used.")
-                    continue
+        # shock_param_list = rospy.get_param("~shock_absorbers", [])
+        # self._shock_pubs = []
+        # try:
+        #     for shock_params in shock_param_list:
+        #         try:
+        #             ctrlr_name = shock_params["controller_name"]
+        #             try:
+        #                 eq_pos = shock_params["equilibrium_position"]
+        #             except:
+        #                 eq_pos = self._DEF_EQ_POS
+        #             eq_pos = float(eq_pos)
+        #         except:
+        #             rospy.logwarn("An invalid parameter was specified for a "
+        #                           "shock absorber. The shock absorber will "
+        #                           "not be used.")
+        #             continue
 
-                pub = rospy.Publisher(ctrlr_name + "/command", Float64,
-                                      latch=True, queue_size=1)
-                _wait_for_ctrlr(list_ctrlrs, ctrlr_name)
-                pub.publish(eq_pos)
-                self._shock_pubs.append(pub)
-        except:
-            rospy.logwarn("The specified list of shock absorbers is invalid. "
-                          "No shock absorbers will be used.")
+        #         pub = rospy.Publisher(ctrlr_name + "/command", Float64,
+        #                               latch=True, queue_size=1)
+        #         _wait_for_ctrlr(list_ctrlrs, ctrlr_name)
+        #         pub.publish(eq_pos)
+        #         self._shock_pubs.append(pub)
+        # except:
+        #     rospy.logwarn("The specified list of shock absorbers is invalid. "
+        #                   "No shock absorbers will be used.")
 
         # Command timeout
         try:
@@ -272,7 +281,7 @@ class _AckermannCtrlr(object):
                              self.ackermann_cmd_cb, queue_size=1)
         ##################################################################################################################
         
-
+        self.wheels_status_pub = rospy.Publisher("/wheels_status", wheel_vals, queue_size = 1)
         self.rf_wheel_sub = rospy.Subscriber("/right_front_axle_val", Float64, self.rf_wheel_callback, queue_size=1)
         self.lf_wheel_sub = rospy.Subscriber("/left_front_axle_val", Float64, self.lf_wheel_callback, queue_size=1)
         self.rr_wheel_sub = rospy.Subscriber("/right_rear_axle_val", Float64, self.rr_wheel_callback, queue_size=1)
@@ -332,7 +341,17 @@ class _AckermannCtrlr(object):
             if self._right_rear_axle_cmd_pub:
                 self._right_rear_axle_cmd_pub.publish(self._right_rear_ang_vel)
             
-            
+     
+            self.cur_wheels_status.right_theta = self._theta_right
+            self.cur_wheels_status.left_theta = self._theta_left
+            self.cur_wheels_status.ang_v_right_front = self._right_front_ang_vel
+            self.cur_wheels_status.ang_v_left_front = self._left_front_ang_vel
+            self.cur_wheels_status.ang_v_right_rear = self._right_rear_ang_vel
+            self.cur_wheels_status.ang_v_left_rear = self._left_rear_ang_vel
+
+            self.wheels_status_pub.publish(self.cur_wheels_status)
+
+
             self._sleep_timer.sleep()
 
     def ackermann_cmd_cb(self, ackermann_cmd):

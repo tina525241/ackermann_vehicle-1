@@ -16,8 +16,24 @@
 
 cmake_minimum_required(VERSION 2.8.3)
 project(ackermann_vehicle_gazebo)
-find_package(catkin REQUIRED)
-catkin_package()
+find_package(catkin REQUIRED COMPONENTS
+        roscpp
+        rospy
+        std_msgs
+        message_generation
+)
+add_message_files(
+        FILES
+        wheel_vals.msg
+)
+generate_messages(
+        DEPENDENCIES
+        std_msgs
+)
+catkin_package(
+        CATKIN_DEPENDS message_runtime
+)
+
 
 catkin_install_python(PROGRAMS scripts/ackermann_controller scripts/the_controller
                       DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
