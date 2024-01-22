@@ -4,46 +4,16 @@
 
 Control the wheels of a vehicle with Ackermann steering.
 
-Subscribed Topics:
-    ackermann_cmd (ackermann_msgs/AckermannDrive)
-        Ackermann command. It contains the vehicle's desired speed and steering
-        angle.
-
-Published Topics:
-    <left steering controller name>/command (std_msgs/Float64)
-        Command for the left steering controller.
-    <right steering controller name>/command (std_msgs/Float64)
-        Command for the right steering controller.
-    <left front axle controller name>/command (std_msgs/Float64)
-        Command for the left front axle controller.
-    <right front axle controller name>/command (std_msgs/Float64)
-        Command for the right front axle controller.
-    <left rear axle controller name>/command (std_msgs/Float64)
-        Command for the left rear axle controller.
-    <right rear axle controller name>/command (std_msgs/Float64)
-        Command for the right rear axle controller.
-    <shock absorber controller name>/command (std_msgs/Float64)
-        One of these topics exists for each shock absorber. They are latched
-        topics.
-
-Services Called:
-    controller_manager/list_controllers (controller_manager_msgs/
-                                         ListControllers)
-        List the states of the controllers.
-
 Parameters:
     ~left_front_wheel/steering_link_name (string, default: left_steering_link)
-    ~right_front_wheel/steering_link_name (string,
-                                           default: right_steering_link)
+    ~right_front_wheel/steering_link_name (string, default: right_steering_link)
         Names of links that have origins coincident with the origins of the
         left and right steering joints, respectively. The steering links are
         used to compute the distance between the steering joints, as well as
         the vehicle's wheelbase.
 
-    ~left_front_wheel/steering_controller_name (string, default:
-                                                left_steering_controller)
-    ~right_front_wheel/steering_controller_name (string, default:
-                                                 right_steering_controller)
+    ~left_front_wheel/steering_controller_name (string, default: left_steering_controller)
+    ~right_front_wheel/steering_controller_name (string, default: right_steering_controller)
         Steering controller names.
 
     ~left_rear_wheel/link_name (string, default: left_wheel)
@@ -52,35 +22,6 @@ Parameters:
         left and right wheels, respectively. The rear wheel links are used to
         compute the vehicle's wheelbase.
 
-    ~left_front_wheel/axle_controller_name (string)
-    ~right_front_wheel/axle_controller_name
-    ~left_rear_wheel/axle_controller_name
-    ~right_rear_wheel/axle_controller_name
-        Axle controller names. If no controller name is specified for an axle,
-        that axle will not have a controller. This allows the control of
-        front-wheel, rear-wheel, and four-wheel drive vehicles.
-
-    ~left_front_wheel/diameter (double, default: 1.0)
-    ~right_front_wheel/diameter
-    ~left_rear_wheel/diameter
-    ~right_rear_wheel/diameter
-        Wheel diameters. Each diameter must be greater than zero. Unit: meter.
-
-    ~shock_absorbers (sequence of mappings, default: empty)
-        Zero or more shock absorbers.
-
-        Key-Value Pairs:
-
-        controller_name (string)
-            Controller name.
-        equilibrium_position (double, default: 0.0)
-            Equilibrium position. Unit: meter.
-
-    ~cmd_timeout (double, default: 0.5)
-        If ~cmd_timeout is greater than zero and this node does not receive a
-        command for more than ~cmd_timeout seconds, vehicle motion is paused
-        until a command is received. If ~cmd_timeout is less than or equal to
-        zero, the command timeout is disabled.
     ~publishing_frequency (double, default: 30.0)
         Joint command publishing frequency. It must be greater than zero.
         Unit: hertz.
@@ -95,20 +36,6 @@ Required tf Transforms:
     <~left_rear_wheel/link_name> to <~right_rear_wheel/link_name>
         Specifies the position of the left rear wheel in the right rear
         wheel's frame.
-
-Copyright (c) 2013-2015 Wunderkammer Laboratory
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-  http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
 """
 
 import math
@@ -121,8 +48,11 @@ import rospy
 import tf
 
 from ackermann_msgs.msg import AckermannDrive
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64, Bool
+from ackermann_vehicle_gazebo.msg import wheel_vals
+from gazebo_msgs.msg import ModelStates, ModelState
 from controller_manager_msgs.srv import ListControllers
+from tf.transformations import euler_from_quaternion
 
 
 class _AckermannCtrlr(object):
@@ -138,6 +68,20 @@ class _AckermannCtrlr(object):
         rospy.init_node("ackermann_controller")
 
         # Parameters
+        self.robot_pos = 0
+        self.robot_ori = 0
+        self.robot_linear_vel = 0
+        self.robot_angular_vel = 0
+        self.robot_yaw = 0
+        self.robot_yaw_d = 0 # robot yaw dot
+        # self.cur_wheels_status = wheel_vals()
+        # self.cur_wheels_status.right_theta = 0
+        # self.cur_wheels_status.left_theta = 0
+        # self.cur_wheels_status.ang_v_right_front = 0
+        # self.cur_wheels_status.ang_v_left_front = 0
+        # self.cur_wheels_status.ang_v_right_rear = 0
+        # self.cur_wheels_status.ang_v_left_rear = 0
+
 
         # Wheels
         (left_steer_link_name, left_steer_ctrlr_name,
@@ -159,33 +103,6 @@ class _AckermannCtrlr(object):
         list_ctrlrs = rospy.ServiceProxy("controller_manager/list_controllers",
                                          ListControllers)
         list_ctrlrs.wait_for_service()
-
-        # Shock absorbers
-        shock_param_list = rospy.get_param("~shock_absorbers", [])
-        self._shock_pubs = []
-        try:
-            for shock_params in shock_param_list:
-                try:
-                    ctrlr_name = shock_params["controller_name"]
-                    try:
-                        eq_pos = shock_params["equilibrium_position"]
-                    except:
-                        eq_pos = self._DEF_EQ_POS
-                    eq_pos = float(eq_pos)
-                except:
-                    rospy.logwarn("An invalid parameter was specified for a "
-                                  "shock absorber. The shock absorber will "
-                                  "not be used.")
-                    continue
-
-                pub = rospy.Publisher(ctrlr_name + "/command", Float64,
-                                      latch=True, queue_size=1)
-                _wait_for_ctrlr(list_ctrlrs, ctrlr_name)
-                pub.publish(eq_pos)
-                self._shock_pubs.append(pub)
-        except:
-            rospy.logwarn("The specified list of shock absorbers is invalid. "
-                          "No shock absorbers will be used.")
 
         # Command timeout
         try:
@@ -214,7 +131,23 @@ class _AckermannCtrlr(object):
 
         # _ackermann_cmd_lock is used to control access to _steer_ang,
         # _steer_ang_vel, _speed, and _accel.
+        self._ackermann_cmd_lock = threading.Lock()
+        self._steer_ang = 0.0      # Steering angle
+        self._steer_ang_vel = 0.0  # Steering angle velocity
+        self._speed = 0.0
+        self._accel = 0.0          # Acceleration
 
+        self._last_steer_ang = 0.0  # Last steering angle
+        self._theta_left = 0.0      # Left steering joint angle
+        self._theta_right = 0.0     # Right steering joint angle
+
+        self._last_speed = 0.0
+        self._last_accel_limit = 0.0  # Last acceleration limit
+        # Axle angular velocities
+        self._left_front_ang_vel = 0.0
+        self._right_front_ang_vel = 0.0
+        self._left_rear_ang_vel = 0.0
+        self._right_rear_ang_vel = 0.0
 
         # _joint_dist_div_2 is the distance between the steering joints,
         # divided by two.
@@ -231,12 +164,10 @@ class _AckermannCtrlr(object):
         self._wheelbase_sqr = self._wheelbase ** 2
 
         # Publishers and subscribers
-
         self._left_steer_cmd_pub = \
             _create_cmd_pub(list_ctrlrs, left_steer_ctrlr_name)
         self._right_steer_cmd_pub = \
             _create_cmd_pub(list_ctrlrs, right_steer_ctrlr_name)
-
         self._left_front_axle_cmd_pub = \
             _create_axle_cmd_pub(list_ctrlrs, left_front_axle_ctrlr_name)
         self._right_front_axle_cmd_pub = \
@@ -245,7 +176,19 @@ class _AckermannCtrlr(object):
             _create_axle_cmd_pub(list_ctrlrs, left_rear_axle_ctrlr_name)
         self._right_rear_axle_cmd_pub = \
             _create_axle_cmd_pub(list_ctrlrs, right_rear_axle_ctrlr_name)
-
+        self._ackermann_cmd_sub = \
+            rospy.Subscriber("ackermann_cmd", AckermannDrive,
+                             self.ackermann_cmd_cb, queue_size=1)
+        ##################################################################################################################
+        ################################ MY EDIT #########################################################################
+        ##################################################################################################################
+        # Publisher
+        #self.wheels_status_pub = rospy.Publisher("/wheels_status", wheel_vals, queue_size = 1)
+        self.current_model_pub = rospy.Publisher("/current_model_states", ModelState, queue_size = 1)
+        self.current_model = ModelState()
+        
+        # Subscriber
+        self.robot_state_sub =rospy.Subscriber("/gazebo/model_states", ModelStates, self.robot_state_cb, queue_size=1)
 
     def spin(self):
         """Control the vehicle."""
@@ -264,13 +207,24 @@ class _AckermannCtrlr(object):
                 steer_ang_changed, center_y = \
                     self._ctrl_steering(self._last_steer_ang, 0.0, 0.001)
                 self._ctrl_axles(0.0, 0.0, 0.0, steer_ang_changed, center_y)
-        
+            elif delta_t > 0.0:
+                with self._ackermann_cmd_lock:
+                    steer_ang = self._steer_ang
+                    steer_ang_vel = self._steer_ang_vel
+                    speed = self._speed
+                    accel = self._accel
+                steer_ang_changed, center_y = \
+                    self._ctrl_steering(steer_ang, steer_ang_vel, delta_t)
+                self._ctrl_axles(speed, accel, delta_t, steer_ang_changed,
+                                 center_y)
 
-            # Publish the steering and axle joint commands.
+            
             self._left_steer_cmd_pub.publish(self._theta_left)
             self._right_steer_cmd_pub.publish(self._theta_right)
+
             if self._left_front_axle_cmd_pub:
                 self._left_front_axle_cmd_pub.publish(self._left_front_ang_vel)
+            
             if self._right_front_axle_cmd_pub:
                 self._right_front_axle_cmd_pub.\
                     publish(self._right_front_ang_vel)
@@ -278,9 +232,61 @@ class _AckermannCtrlr(object):
                 self._left_rear_axle_cmd_pub.publish(self._left_rear_ang_vel)
             if self._right_rear_axle_cmd_pub:
                 self._right_rear_axle_cmd_pub.publish(self._right_rear_ang_vel)
+            
+            #################################################################################################
+            ######################### MY EDIT ###############################################################
+            #################################################################################################
+            # self.cur_wheels_status.right_theta = self._theta_right
+            # self.cur_wheels_status.left_theta = self._theta_left
+            # self.cur_wheels_status.ang_v_right_front = self._right_front_ang_vel
+            # self.cur_wheels_status.ang_v_left_front = self._left_front_ang_vel
+            # self.cur_wheels_status.ang_v_right_rear = self._right_rear_ang_vel
+            # self.cur_wheels_status.ang_v_left_rear = self._left_rear_ang_vel
+            # self.wheels_status_pub.publish(self.cur_wheels_status)
+
 
             self._sleep_timer.sleep()
 
+    ##################### CALLBACK FUNCTIONS FOR SUBSCRIBERS ###############################
+    def ackermann_cmd_cb(self, ackermann_cmd):
+        """Ackermann driving command callback
+        :Parameters:
+          ackermann_cmd : ackermann_msgs.msg.AckermannDrive
+            Ackermann driving command.
+        """
+        self._last_cmd_time = rospy.get_time()
+        with self._ackermann_cmd_lock:
+            self._steer_ang = ackermann_cmd.steering_angle
+            self._steer_ang_vel = ackermann_cmd.steering_angle_velocity
+            self._speed = ackermann_cmd.speed
+            self._accel = ackermann_cmd.acceleration
+    
+    def robot_state_cb(self, robot_states):
+        """ get robot state w.r.t. world frame"""
+        self.robot_name = robot_states.name[1]
+        self.robot_pos = robot_states.pose[1].position
+        self.robot_ori = robot_states.pose[1].orientation
+        self.robot_linear_vel = robot_states.twist[1].linear
+        self.robot_angular_vel = robot_states.twist[1].angular
+        self.robot_yaw = self.quat_to_euler()
+        self.robot_yaw_d = self.robot_angular_vel.z
+
+        self.current_model.model_name = self.robot_name
+        self.current_model.pose.position = self.robot_pos
+        self.current_model.pose.orientation = self.robot_ori
+        self.current_model.twist.linear = self.robot_linear_vel
+        self.current_model.twist.angular = self.robot_angular_vel
+        self.current_model.reference_frame = "world"
+        self.current_model_pub.publish(self.current_model)
+
+
+    def quat_to_euler(self):
+        x = self.robot_ori.x
+        y = self.robot_ori.y
+        z = self.robot_ori.z
+        w = self.robot_ori.w
+        (roll,pitch,yaw) = euler_from_quaternion([x, y, z, w])
+        return yaw
 
     def _get_front_wheel_params(self, side):
         # Get front wheel parameters. Return a tuple containing the steering
@@ -439,6 +445,9 @@ def _get_steer_ang(phi):
     if phi >= 0.0:
         return (pi / 2) - phi
     return (-pi / 2) - phi
+
+
+
 
 
 # main

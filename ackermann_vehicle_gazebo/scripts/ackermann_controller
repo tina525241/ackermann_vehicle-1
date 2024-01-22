@@ -119,7 +119,7 @@ from math import pi
 
 import rospy
 import tf
-import numpy as np
+
 from ackermann_msgs.msg import AckermannDrive
 from std_msgs.msg import Float64, Bool
 from ackermann_vehicle_gazebo.msg import wheel_vals
@@ -280,8 +280,12 @@ class _AckermannCtrlr(object):
             rospy.Subscriber("ackermann_cmd", AckermannDrive,
                              self.ackermann_cmd_cb, queue_size=1)
         ##################################################################################################################
-        
+        ################################ MY EDIT #########################################################################
+        ##################################################################################################################
+        # Publisher
         self.wheels_status_pub = rospy.Publisher("/wheels_status", wheel_vals, queue_size = 1)
+        
+        # Subscriber
         self.rf_wheel_sub = rospy.Subscriber("/right_front_axle_val", Float64, self.rf_wheel_callback, queue_size=1)
         self.lf_wheel_sub = rospy.Subscriber("/left_front_axle_val", Float64, self.lf_wheel_callback, queue_size=1)
         self.rr_wheel_sub = rospy.Subscriber("/right_rear_axle_val", Float64, self.rr_wheel_callback, queue_size=1)
