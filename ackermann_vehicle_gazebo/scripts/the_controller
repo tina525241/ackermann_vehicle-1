@@ -74,13 +74,13 @@ class _AckermannCtrlr(object):
         self.robot_angular_vel = 0
         self.robot_yaw = 0
         self.robot_yaw_d = 0 # robot yaw dot
-        # self.cur_wheels_status = wheel_vals()
-        # self.cur_wheels_status.right_theta = 0
-        # self.cur_wheels_status.left_theta = 0
-        # self.cur_wheels_status.ang_v_right_front = 0
-        # self.cur_wheels_status.ang_v_left_front = 0
-        # self.cur_wheels_status.ang_v_right_rear = 0
-        # self.cur_wheels_status.ang_v_left_rear = 0
+        self.cur_wheels_status = wheel_vals()
+        self.cur_wheels_status.right_theta = 0
+        self.cur_wheels_status.left_theta = 0
+        self.cur_wheels_status.ang_v_right_front = 0
+        self.cur_wheels_status.ang_v_left_front = 0
+        self.cur_wheels_status.ang_v_right_rear = 0
+        self.cur_wheels_status.ang_v_left_rear = 0
 
 
         # Wheels
@@ -183,7 +183,7 @@ class _AckermannCtrlr(object):
         ################################ MY EDIT #########################################################################
         ##################################################################################################################
         # Publisher
-        #self.wheels_status_pub = rospy.Publisher("/wheels_status", wheel_vals, queue_size = 1)
+        self.wheels_status_pub = rospy.Publisher("/wheels_status", wheel_vals, queue_size = 1)
         self.current_model_pub = rospy.Publisher("/current_model_states", ModelState, queue_size = 1)
         self.current_model = ModelState()
         
@@ -236,13 +236,13 @@ class _AckermannCtrlr(object):
             #################################################################################################
             ######################### MY EDIT ###############################################################
             #################################################################################################
-            # self.cur_wheels_status.right_theta = self._theta_right
-            # self.cur_wheels_status.left_theta = self._theta_left
-            # self.cur_wheels_status.ang_v_right_front = self._right_front_ang_vel
-            # self.cur_wheels_status.ang_v_left_front = self._left_front_ang_vel
-            # self.cur_wheels_status.ang_v_right_rear = self._right_rear_ang_vel
-            # self.cur_wheels_status.ang_v_left_rear = self._left_rear_ang_vel
-            # self.wheels_status_pub.publish(self.cur_wheels_status)
+            self.cur_wheels_status.right_theta = self._theta_right
+            self.cur_wheels_status.left_theta = self._theta_left
+            self.cur_wheels_status.ang_v_right_front = self._right_front_ang_vel
+            self.cur_wheels_status.ang_v_left_front = self._left_front_ang_vel
+            self.cur_wheels_status.ang_v_right_rear = self._right_rear_ang_vel
+            self.cur_wheels_status.ang_v_left_rear = self._left_rear_ang_vel
+            self.wheels_status_pub.publish(self.cur_wheels_status)
 
 
             self._sleep_timer.sleep()
